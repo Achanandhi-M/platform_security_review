@@ -2,7 +2,7 @@ name: Secure Platform Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [master]
 
 jobs:
   security-pipeline:
