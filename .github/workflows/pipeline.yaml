@@ -72,6 +72,9 @@ jobs:
         docker run -d -p 8000:8000 demo-secure-app:${{ github.sha }}
         sleep 20
 
+    - name: Fix workspace permissions
+      run: sudo chmod -R 777 $GITHUB_WORKSPACE
+
     # --------------------
     # DAST - OWASP ZAP
     # --------------------
