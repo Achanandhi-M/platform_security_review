@@ -10,6 +10,7 @@ jobs:
 
     permissions:
       contents: read
+      issues: write
       id-token: write   # REQUIRED for cosign keyless signing
 
     steps:
