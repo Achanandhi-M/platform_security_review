@@ -8,6 +8,10 @@ jobs:
   security-pipeline:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      id-token: write   # REQUIRED for cosign keyless signing
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -20,7 +24,11 @@ jobs:
       with:
         python-version: "3.11"
 
-    - run: pip install -r requirements.txt
+    - name: Upgrade pip
+      run: python -m pip install --upgrade pip
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
 
     # --------------------
     # Dependency Scan
@@ -31,13 +39,13 @@ jobs:
         pip-audit -f json -o audit.json || true
 
     # --------------------
-    # SAST - SonarQube
+    # SAST - SonarCloud
     # --------------------
     - name: Sonar Scan
       uses: sonarsource/sonarqube-scan-action@v2
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        SONAR_HOST_URL: ${{ secrets.SONAR_HOST }}
+        SONAR_HOST_URL: https://sonarcloud.io
 
     # --------------------
     # Build Docker Image
@@ -73,13 +81,37 @@ jobs:
         target: 'http://localhost:8000'
 
     # --------------------
-    # Login DockerHub
+    # Docker Login
     # --------------------
-    - name: Login Docker
-      run: echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
+    - name: Login DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USER }}
+        password: ${{ secrets.DOCKER_PASS }}
 
+    # --------------------
+    # Tag Image
+    # --------------------
     - name: Tag Image
-      run: docker tag demo-secure-app:${{ github.sha }} ${{ secrets.DOCKER_USER }}/secure-demo:latest
+      run: |
+        docker tag demo-secure-app:${{ github.sha }} \
+        ${{ secrets.DOCKER_USER }}/secure-demo:${{ github.sha }}
+
+    # --------------------
+    # Push Image FIRST
+    # --------------------
+    - name: Push Image
+      run: docker push ${{ secrets.DOCKER_USER }}/secure-demo:${{ github.sha }}
+
+    # --------------------
+    # Get Image Digest
+    # --------------------
+    - name: Get Image Digest
+      id: digest
+      run: |
+        DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' \
+        ${{ secrets.DOCKER_USER }}/secure-demo:${{ github.sha }})
+        echo "digest=$DIGEST" >> $GITHUB_OUTPUT
 
     # --------------------
     # Install Cosign
@@ -88,13 +120,7 @@ jobs:
       uses: sigstore/cosign-installer@v3
 
     # --------------------
-    # Sign Image
+    # Sign Image (DIGEST)
     # --------------------
     - name: Sign Image
-      run: cosign sign --yes ${{ secrets.DOCKER_USER }}/secure-demo:latest
-
-    # --------------------
-    # Push Image
-    # --------------------
-    - name: Push Image
-      run: docker push ${{ secrets.DOCKER_USER }}/secure-demo:latest
+      run: cosign sign --yes ${{ steps.digest.outputs.digest }}
